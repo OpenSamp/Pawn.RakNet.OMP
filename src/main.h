@@ -64,6 +64,7 @@ using BitStream = NetworkBitStream;
 using RPCIndex = unsigned char;
 
 #include "config.h"
+#include "bitstream_handle.h"
 #include "bitstream_pool.h"
 #include "script.h"
 #include "native_param.h"

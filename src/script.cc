@@ -210,7 +210,9 @@ cell Script::PR_EmulateIncomingRPC(BitStream *bs, int player_id,
 }
 
 // native BitStream:BS_New();
-cell Script::BS_New() { return reinterpret_cast<cell>(bitstream_pool_.New()); }
+cell Script::BS_New() {
+  return BitStreamHandleTable::Register(bitstream_pool_.New());
+}
 
 // native BitStream:BS_NewCopy(BitStream:bs);
 cell Script::BS_NewCopy(BitStream *bs) {
@@ -224,12 +226,14 @@ cell Script::BS_NewCopy(BitStream *bs) {
 
   bs->SetReadOffset(original_read_offset);
 
-  return reinterpret_cast<cell>(bs_copy);
+  return BitStreamHandleTable::Register(bs_copy);
 }
 
 // native BS_Delete(&BitStream:bs);
 cell Script::BS_Delete(cell *bs) {
   bitstream_pool_.Delete(GetBitStream(*bs));
+
+  BitStreamHandleTable::Unregister(*bs);
 
   *bs = 0;
 
@@ -644,17 +648,6 @@ bool Script::OnLoad() {
   return true;
 }
 
-bool Script::ExecPublic(const PublicPtr &pub, int player_id,
-                        unsigned char event_id, BitStream *bs) {
-  if (!pub || !pub->Exists()) {
-    return true;
-  }
-
-  bs->resetReadPointer();
-
-  return pub->Exec(player_id, static_cast<cell>(event_id), bs);
-}
-
 void Script::InitPublic(PR_EventType type, const std::string &public_name) {
   publics_.at(type) = MakePublic(public_name, config_->UseCaching());
 }
@@ -684,7 +677,7 @@ void Script::InitHandlers() {
 }
 
 BitStream *Script::GetBitStream(cell handle) {
-  const auto bs = reinterpret_cast<BitStream *>(handle);
+  const auto bs = BitStreamHandleTable::Lookup(handle);
   if (!bs) {
     throw std::runtime_error{"Invalid BitStream handle"};
   }

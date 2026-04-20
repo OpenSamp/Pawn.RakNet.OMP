@@ -115,19 +115,29 @@ class Script : public ptl::AbstractScript<Script> {
 
   template <PR_EventType event_type>
   bool OnEvent(int player_id, unsigned char event_id, BitStream *bs) {
+    ScopedBitStreamHandle scoped(bs);
+    const cell bs_handle = scoped.get();
+
+    auto exec_public = [&](const PublicPtr &pub) -> bool {
+      if (!pub || !pub->Exists()) {
+        return true;
+      }
+      bs->resetReadPointer();
+      return pub->Exec(player_id, static_cast<cell>(event_id), bs_handle);
+    };
+
     if constexpr (event_type == PR_OUTGOING_PACKET) {
-      if (!ExecPublic(public_on_outcoming_packet_, player_id, event_id, bs)) {
+      if (!exec_public(public_on_outcoming_packet_)) {
         return false;
       }
     } else if constexpr (event_type == PR_OUTGOING_RPC) {
-      if (!ExecPublic(public_on_outcoming_rpc_, player_id, event_id, bs)) {
+      if (!exec_public(public_on_outcoming_rpc_)) {
         return false;
       }
     }
 
     if constexpr (event_type != PR_INCOMING_CUSTOM_RPC) {
-      if (!ExecPublic(std::get<event_type>(publics_), player_id, event_id,
-                      bs)) {
+      if (!exec_public(std::get<event_type>(publics_))) {
         return false;
       }
     }
@@ -135,7 +145,7 @@ class Script : public ptl::AbstractScript<Script> {
     for (const auto &handler : std::get<event_type>(handlers_).at(event_id)) {
       bs->resetReadPointer();
 
-      if (!handler->Exec(player_id, bs)) {
+      if (!handler->Exec(player_id, bs_handle)) {
         return false;
       }
     }
@@ -144,9 +154,6 @@ class Script : public ptl::AbstractScript<Script> {
 
     return true;
   }
-
-  bool ExecPublic(const PublicPtr &pub, int player_id, unsigned char event_id,
-                  BitStream *bs);
 
   void InitPublic(PR_EventType type, const std::string &public_name);
 

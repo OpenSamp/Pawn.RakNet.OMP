@@ -27,6 +27,8 @@
 
 class BitStreamPool {
  public:
+  ~BitStreamPool();
+
   BitStream *New();
 
   void Delete(BitStream *ptr);

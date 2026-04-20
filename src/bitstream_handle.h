@@ -22,40 +22,40 @@
  * SOFTWARE.
  */
 
-#include "main.h"
+#ifndef PAWNRAKNET_BITSTREAM_HANDLE_H_
+#define PAWNRAKNET_BITSTREAM_HANDLE_H_
 
-BitStreamPool::~BitStreamPool() {
-  // Clear any handles still referencing this pool's BitStreams so scripts
-  // that forgot to call BS_Delete don't leave dangling entries in the
-  // global handle table.
-  for (auto &[bs, is_occupied] : items_) {
-    BitStreamHandleTable::UnregisterByPointer(bs.get());
-  }
-}
+// Registry that maps 32-bit handles to BitStream* pointers.
+// Needed because AMX `cell` is always 32-bit, so on 64-bit builds we can't
+// pass raw pointers to Pawn scripts. Handle 0 is reserved as "invalid".
+class BitStreamHandleTable {
+ public:
+  static cell Register(BitStream *bs);
+  static void Unregister(cell handle);
+  static void UnregisterByPointer(BitStream *bs);
+  static BitStream *Lookup(cell handle);
+};
 
-BitStream *BitStreamPool::New() {
-  for (auto &[bs, is_occupied] : items_) {
-    if (!is_occupied) {
-      is_occupied = true;
+// RAII wrapper for transient handles (event dispatch). Registers on
+// construction, unregisters on destruction.
+class ScopedBitStreamHandle {
+ public:
+  explicit ScopedBitStreamHandle(BitStream *bs)
+      : handle_(BitStreamHandleTable::Register(bs)) {}
 
-      return bs.get();
+  ScopedBitStreamHandle(const ScopedBitStreamHandle &) = delete;
+  ScopedBitStreamHandle &operator=(const ScopedBitStreamHandle &) = delete;
+
+  ~ScopedBitStreamHandle() {
+    if (handle_) {
+      BitStreamHandleTable::Unregister(handle_);
     }
   }
 
-  const auto &[bs, is_occupied] =
-      items_.emplace_back(std::make_shared<BitStream>(), true);
+  cell get() const { return handle_; }
 
-  return bs.get();
-}
+ private:
+  cell handle_;
+};
 
-void BitStreamPool::Delete(BitStream *ptr) {
-  for (auto &[bs, is_occupied] : items_) {
-    if (bs.get() == ptr) {
-      bs->reset();
-
-      is_occupied = false;
-
-      return;
-    }
-  }
-}
+#endif  // PAWNRAKNET_BITSTREAM_HANDLE_H_

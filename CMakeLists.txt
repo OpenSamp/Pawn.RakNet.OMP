@@ -19,6 +19,8 @@ add_samp_plugin(${PROJECT_NAME}
   src/native_param.h
   src/config.h
   src/config.cc
+  src/bitstream_handle.h
+  src/bitstream_handle.cc
   src/bitstream_pool.h
   src/bitstream_pool.cc
   src/script.h
