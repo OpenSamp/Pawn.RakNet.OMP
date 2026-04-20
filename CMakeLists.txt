@@ -42,8 +42,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE lib lib/samp-ptl)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OMP-SDK)
 
-# AddSAMPPlugin hardcodes -m32 for GCC. Strip it for 64-bit builds so we can
-# produce an x64 component for open.mp without forking the cmake-modules submodule.
+# AddSAMPPlugin targets the 32-bit SA-MP ABI: hardcoded `-m32` for GCC and
+# `POSITION_INDEPENDENT_CODE Off`. Neither works on 64-bit Unix — a shared
+# object must be PIC, and `-m32` conflicts with building an x64 binary at all.
+# Undo both when the toolchain is producing a 64-bit build so we can ship an
+# x64 component for open.mp without forking the cmake-modules submodule.
 if(CMAKE_COMPILER_IS_GNUCC AND NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
   foreach(prop COMPILE_FLAGS LINK_FLAGS)
     get_target_property(flags ${PROJECT_NAME} ${prop})
@@ -52,4 +55,6 @@ if(CMAKE_COMPILER_IS_GNUCC AND NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
       set_target_properties(${PROJECT_NAME} PROPERTIES ${prop} "${flags}")
     endif()
   endforeach()
+
+  set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
 endif()
