@@ -74,7 +74,9 @@ void PluginComponent::onAmxLoad(IPawnScript &script) {
   Plugin::DoAmxLoad(static_cast<AMX *>(script.GetAMX()));
 };
 
-void PluginComponent::onAmxUnload(IPawnScript &script){};
+void PluginComponent::onAmxUnload(IPawnScript &script) {
+  Plugin::DoAmxUnload(static_cast<AMX *>(script.GetAMX()));
+};
 
 void PluginComponent::onTick(Microseconds elapsed, TimePoint now) {
   Plugin::DoProcessTick();
@@ -107,13 +109,15 @@ bool PluginComponent::onSendRPC(IPlayer *peer, int id, NetworkBitStream &bs) {
 }
 
 void PluginComponent::onFree(IComponent *component) {
+  if (!pawn_component_) {
+    return;
+  }
+
   if (component == pawn_component_ || component == this) {
     Plugin::DoUnload();
 
-    if (pawn_component_) {
-        core_->getEventDispatcher().removeEventHandler(this);
-        pawn_component_->getEventDispatcher().removeEventHandler(this);
-    }
+    core_->getEventDispatcher().removeEventHandler(this);
+    pawn_component_->getEventDispatcher().removeEventHandler(this);
 
     pawn_component_ = nullptr;
   }

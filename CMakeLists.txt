@@ -23,8 +23,6 @@ add_samp_plugin(${PROJECT_NAME}
   src/bitstream_pool.cc
   src/script.h
   src/script.cc
-  src/hooks.h
-  src/hooks.cc
 
   lib/RakNet/bitstream.hpp
   lib/RakNet/bitstream.cpp
@@ -41,3 +39,15 @@ add_samp_plugin(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE lib lib/samp-ptl)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE OMP-SDK)
+
+# AddSAMPPlugin hardcodes -m32 for GCC. Strip it for 64-bit builds so we can
+# produce an x64 component for open.mp without forking the cmake-modules submodule.
+if(CMAKE_COMPILER_IS_GNUCC AND NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
+  foreach(prop COMPILE_FLAGS LINK_FLAGS)
+    get_target_property(flags ${PROJECT_NAME} ${prop})
+    if(flags)
+      string(REPLACE "-m32" "" flags "${flags}")
+      set_target_properties(${PROJECT_NAME} PROPERTIES ${prop} "${flags}")
+    endif()
+  endforeach()
+endif()

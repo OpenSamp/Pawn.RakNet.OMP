@@ -4,101 +4,126 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - "*"
-      - "*/*"
       - "**"
+    tags:
+      - "v*"
   pull_request:
     branches:
-      - "*"
-      - "*/*"
       - "**"
+
 env:
-  PLUGIN_VERSION: 1.6.1-omp
+  PLUGIN_VERSION: 1.6.2-omp
 
 jobs:
-  build-windows-release:
-    runs-on: windows-2019
+  build-windows:
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: Win32
+            artifact_suffix: win32
+          - arch: x64
+            artifact_suffix: win64
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           clean: true
           submodules: recursive
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.arch }} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
-      - name: Install CMake
-        uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: "3.23.2"
+      - name: Build
+        run: cmake --build build --config Release
 
-      - name: Install latest conan
+      - name: Stage artifact
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -v "conan==1.57.0"
+          mkdir -p dist
+          cp build/Release/pawnraknet.dll dist/
+          cp src/Pawn.RakNet.inc dist/
 
-      - name: Generate build files
-        run: |
-          mkdir build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release .. -G "Visual Studio 16 2019" -A Win32
-          cmake --build . --config Release
-
-      - name: Upload artifacts (part 1)
-        uses: actions/upload-artifact@v3
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: pawnraknet-${{ env.PLUGIN_VERSION }}-win32
-          path: build/Release/pawnraknet.dll
+          name: pawnraknet-${{ env.PLUGIN_VERSION }}-${{ matrix.artifact_suffix }}
+          path: dist/
+          if-no-files-found: error
 
-      - name: Upload artifacts (part 2)
-        uses: actions/upload-artifact@v3
-        with:
-          name: pawnraknet-${{ env.PLUGIN_VERSION }}-win32
-          path: src/Pawn.RakNet.inc
-
-  build-linux-release:
+  build-linux:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            cflags: "-m32"
+            apt_extra: "g++-multilib"
+            artifact_suffix: linux
+          - arch: x64
+            cflags: ""
+            apt_extra: ""
+            artifact_suffix: linux-x64
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           clean: true
           submodules: recursive
           fetch-depth: 0
 
       - name: Install packages
-        run: sudo apt-get install g++-multilib
+        if: matrix.apt_extra != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.apt_extra }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install CMake
-        uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: "3.23.2"
-
-      - name: Install latest conan
-        run: |
-          python -m pip install --upgrade pip
-          pip install -v "conan==1.57.0"
-
-      - name: Generate build files
-        run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_FLAGS="${{ matrix.cflags }}" -DCMAKE_CXX_FLAGS="${{ matrix.cflags }}"
 
       - name: Build
+        run: cmake --build build --config Release
+
+      - name: Stage artifact
         run: |
-          cd build
-          cmake --build . --config Release
+          mkdir -p dist
+          cp build/pawnraknet.so dist/
+          cp src/Pawn.RakNet.inc dist/
+          tar -czf pawnraknet-$PLUGIN_VERSION-${{ matrix.artifact_suffix }}.tar.gz -C dist pawnraknet.so Pawn.RakNet.inc
 
-      - name: Create artifact
-        run: tar -czf pawnraknet-$PLUGIN_VERSION-linux.tar.gz -C build pawnraknet.so -C ../src Pawn.RakNet.inc
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: pawnraknet-${{ env.PLUGIN_VERSION }}-linux
-          path: pawnraknet-${{ env.PLUGIN_VERSION }}-linux.tar.gz
+          name: pawnraknet-${{ env.PLUGIN_VERSION }}-${{ matrix.artifact_suffix }}
+          path: pawnraknet-${{ env.PLUGIN_VERSION }}-${{ matrix.artifact_suffix }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package windows artifacts
+        run: |
+          cd artifacts
+          for d in pawnraknet-*-win32 pawnraknet-*-win64; do
+            if [ -d "$d" ]; then
+              (cd "$d" && zip -r "../${d}.zip" .)
+            fi
+          done
+          ls -la
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/pawnraknet-*-win32.zip
+            artifacts/pawnraknet-*-win64.zip
+            artifacts/pawnraknet-*-linux/pawnraknet-*-linux.tar.gz
+            artifacts/pawnraknet-*-linux-x64/pawnraknet-*-linux-x64.tar.gz

@@ -34,9 +34,15 @@ Release/
 Debug/
 bin/
 build/
+build-*/
 
 # Visual Studio user-specific files
-*.vcxproj.user
+*.vcxproj
+*.vcxproj.*
+*.sln
+*.slnx
+.claude/
+log.txt
 
 # macOS files
 .DS_Store
