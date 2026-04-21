@@ -25,6 +25,8 @@ add_samp_plugin(${PROJECT_NAME}
   src/bitstream_pool.cc
   src/script.h
   src/script.cc
+  src/pawnraknet_extension_api.h
+  src/pawnraknet_extension_api.cc
 
   lib/RakNet/bitstream.hpp
   lib/RakNet/bitstream.cpp

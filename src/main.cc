@@ -23,6 +23,51 @@
  */
 
 #include "main.h"
+#include "pawnraknet_extension_api.h"
+
+namespace {
+
+// Iterate C++ event handlers registered via IPawnRakNetComponent::addEventHandler.
+// Returns false if any handler vetoes the event.
+bool FireCppHandlers(PR_EventType type, int playerId, int eventId, BitStream *bs) {
+  const auto &handlers = GetPawnRakNetEventHandlers();
+  if (handlers.empty()) return true;
+
+  // Event handlers receive an int BitStream handle that stays alive only for the
+  // duration of the callback; same contract as for Pawn publics.
+  ScopedBitStreamHandle scoped(bs);
+  const int h = static_cast<int>(scoped.get());
+
+  for (auto *handler : handlers) {
+    bs->resetReadPointer();
+    bool cont = true;
+    switch (type) {
+      case PR_INCOMING_PACKET:
+        cont = handler->onIncomingPacket(playerId, eventId, h);
+        break;
+      case PR_INCOMING_RPC:
+        cont = handler->onIncomingRPC(playerId, eventId, h);
+        break;
+      case PR_INCOMING_CUSTOM_RPC:
+        cont = handler->onIncomingCustomRPC(playerId, eventId, h);
+        break;
+      case PR_OUTGOING_PACKET:
+        cont = handler->onOutgoingPacket(playerId, eventId, h);
+        break;
+      case PR_OUTGOING_RPC:
+        cont = handler->onOutgoingRPC(playerId, eventId, h);
+        break;
+      default:
+        break;
+    }
+    if (!cont) return false;
+  }
+
+  bs->resetReadPointer();
+  return true;
+}
+
+}  // namespace
 
 StringView PluginComponent::componentName() const {
   return Plugin::Instance().Name();
@@ -84,28 +129,42 @@ void PluginComponent::onTick(Microseconds elapsed, TimePoint now) {
 
 bool PluginComponent::onReceivePacket(IPlayer &peer, int id,
                                       NetworkBitStream &bs) {
-  return Plugin::OnEvent<PR_INCOMING_PACKET>(peer.getID(), id, &bs);
+  if (!Plugin::OnEvent<PR_INCOMING_PACKET>(peer.getID(), id, &bs)) return false;
+  return FireCppHandlers(PR_INCOMING_PACKET, peer.getID(), id, &bs);
 }
 
 bool PluginComponent::onReceiveRPC(IPlayer &peer, int id,
                                    NetworkBitStream &bs) {
   auto &plugin = Plugin::Get();
+  const bool custom = plugin.IsCustomRPC(static_cast<RPCIndex>(id));
 
-  const auto on_event = plugin.IsCustomRPC(static_cast<RPCIndex>(id))
-                            ? Plugin::OnEvent<PR_INCOMING_CUSTOM_RPC>
-                            : Plugin::OnEvent<PR_INCOMING_RPC>;
+  const auto on_event = custom ? Plugin::OnEvent<PR_INCOMING_CUSTOM_RPC>
+                               : Plugin::OnEvent<PR_INCOMING_RPC>;
+  if (!on_event(peer.getID(), id, &bs)) return false;
 
-  return on_event(peer.getID(), id, &bs);
+  return FireCppHandlers(
+      custom ? PR_INCOMING_CUSTOM_RPC : PR_INCOMING_RPC,
+      peer.getID(), id, &bs);
 }
 
 bool PluginComponent::onSendPacket(IPlayer *peer, int id,
                                    NetworkBitStream &bs) {
-  return Plugin::OnEvent<PR_OUTGOING_PACKET>(peer ? peer->getID() : -1, id,
-                                             &bs);
+  const int pid = peer ? peer->getID() : -1;
+  if (!Plugin::OnEvent<PR_OUTGOING_PACKET>(pid, id, &bs)) return false;
+  return FireCppHandlers(PR_OUTGOING_PACKET, pid, id, &bs);
 }
 
 bool PluginComponent::onSendRPC(IPlayer *peer, int id, NetworkBitStream &bs) {
-  return Plugin::OnEvent<PR_OUTGOING_RPC>(peer ? peer->getID() : -1, id, &bs);
+  const int pid = peer ? peer->getID() : -1;
+  if (!Plugin::OnEvent<PR_OUTGOING_RPC>(pid, id, &bs)) return false;
+  return FireCppHandlers(PR_OUTGOING_RPC, pid, id, &bs);
+}
+
+IExtension *PluginComponent::getExtension(UID id) {
+  if (id == IPawnRakNetComponent::ExtensionIID) {
+    return GetPawnRakNetExtension();
+  }
+  return nullptr;
 }
 
 void PluginComponent::onFree(IComponent *component) {

@@ -106,6 +106,10 @@ class PluginComponent final : public IComponent,
 
   void free() override;
 
+  // Exposes IPawnRakNetComponent to other open.mp components (bridge for
+  // SampSharp.RakNet etc.). See pawnraknet_extension_api.h.
+  IExtension *getExtension(UID id) override;
+
   static void PluginLogprintf(const char *fmt, ...);
 
   static ICore *&getCore();
