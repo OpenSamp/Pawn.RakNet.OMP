@@ -29,6 +29,24 @@ namespace {
 
 // Iterate C++ event handlers registered via IPawnRakNetComponent::addEventHandler.
 // Returns false if any handler vetoes the event.
+//
+// IMPORTANT: pawnraknet handlers are called from open.mp's
+// NetworkInEventDispatcher (in onReceivePacket / onReceiveRPC). Open.mp then
+// dispatches the same BitStream through SingleNetworkInEventDispatcher (the
+// per-packet / per-RPC dispatchers, where SAMP's PlayerFootSyncHandler etc.
+// live). Those downstream handlers expect the read pointer to be positioned
+// at the data BODY, not at the packet/RPC ID byte (compare PR_EmulateIncomingPacket
+// in script.cc which explicitly does bs->SetReadOffset(8) before invoking
+// per-packet handlers).
+//
+// Calling bs->resetReadPointer() here (offset=0) leaves the bitstream in a
+// state that confuses open.mp's downstream handlers — they'd start reading
+// from the packet ID byte rather than the data body, producing garbage
+// positions / failing internal validation. We therefore explicitly position
+// the read pointer at bit 8 (after the packet/RPC ID byte) on exit.
+//
+// Between our own handlers we still reset to 0 — pawnraknet's contract is
+// that handlers see the full bitstream from the start.
 bool FireCppHandlers(PR_EventType type, int playerId, int eventId, BitStream *bs) {
   const auto &handlers = GetPawnRakNetEventHandlers();
   if (handlers.empty()) return true;
@@ -60,10 +78,13 @@ bool FireCppHandlers(PR_EventType type, int playerId, int eventId, BitStream *bs
       default:
         break;
     }
-    if (!cont) return false;
+    if (!cont) {
+      bs->SetReadOffset(8);
+      return false;
+    }
   }
 
-  bs->resetReadPointer();
+  bs->SetReadOffset(8);
   return true;
 }
 

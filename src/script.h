@@ -128,16 +128,19 @@ class Script : public ptl::AbstractScript<Script> {
 
     if constexpr (event_type == PR_OUTGOING_PACKET) {
       if (!exec_public(public_on_outcoming_packet_)) {
+        bs->SetReadOffset(8);
         return false;
       }
     } else if constexpr (event_type == PR_OUTGOING_RPC) {
       if (!exec_public(public_on_outcoming_rpc_)) {
+        bs->SetReadOffset(8);
         return false;
       }
     }
 
     if constexpr (event_type != PR_INCOMING_CUSTOM_RPC) {
       if (!exec_public(std::get<event_type>(publics_))) {
+        bs->SetReadOffset(8);
         return false;
       }
     }
@@ -146,11 +149,15 @@ class Script : public ptl::AbstractScript<Script> {
       bs->resetReadPointer();
 
       if (!handler->Exec(player_id, bs_handle)) {
+        bs->SetReadOffset(8);
         return false;
       }
     }
 
-    bs->resetReadPointer();
+    // Leave the read pointer at the start of the data body so the downstream
+    // open.mp per-packet/per-RPC dispatcher can read it correctly. See
+    // FireCppHandlers in main.cc for the same reasoning.
+    bs->SetReadOffset(8);
 
     return true;
   }
